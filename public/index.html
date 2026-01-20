@@ -7,86 +7,281 @@
   <style>
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: #1a1a2e; color: #eee; }
-    h1 { color: #e94560; }
-    input, textarea, button { font-size: 14px; padding: 8px 12px; border-radius: 4px; border: 1px solid #444; }
-    input, textarea { background: #16213e; color: #eee; width: 100%; }
+    h1, h2 { color: #e94560; margin-top: 0; }
+    input, textarea, button, select { font-size: 14px; padding: 8px 12px; border-radius: 4px; border: 1px solid #444; }
+    input, textarea, select { background: #16213e; color: #eee; }
+    input[type="checkbox"] { width: auto; }
     button { background: #e94560; color: white; border: none; cursor: pointer; }
     button:hover { background: #ff6b6b; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    button.secondary { background: #0f3460; }
+    button.secondary:hover { background: #1a4a7a; }
     .section { margin-bottom: 20px; padding: 15px; background: #16213e; border-radius: 8px; }
-    .character-list { display: grid; gap: 10px; }
-    .character-card { padding: 12px; background: #0f3460; border-radius: 6px; cursor: pointer; }
-    .character-card:hover { background: #1a4a7a; }
-    .character-card h3 { margin: 0 0 5px 0; color: #e94560; }
-    .character-card p { margin: 0; font-size: 13px; color: #aaa; }
-    #editor { display: none; }
-    #editor textarea { min-height: 200px; margin: 10px 0; }
+    .grid { display: grid; gap: 10px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
     .flex { display: flex; gap: 10px; align-items: center; }
+    .flex-wrap { flex-wrap: wrap; }
     label { display: block; margin-bottom: 5px; color: #aaa; font-size: 13px; }
     .field { margin-bottom: 15px; }
+    .character-list { display: grid; gap: 10px; }
+    .character-card { padding: 12px; background: #0f3460; border-radius: 6px; display: flex; gap: 12px; align-items: flex-start; }
+    .character-card:hover { background: #1a4a7a; }
+    .character-card input[type="checkbox"] { margin-top: 4px; flex-shrink: 0; }
+    .character-card .info { flex: 1; cursor: pointer; }
+    .character-card h3 { margin: 0 0 5px 0; color: #e94560; }
+    .character-card p { margin: 0; font-size: 13px; color: #aaa; }
+    .character-card .tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .tag { background: #1a1a2e; padding: 2px 8px; border-radius: 12px; font-size: 11px; color: #888; }
+    #editor { display: none; }
+    #editor textarea { min-height: 150px; width: 100%; }
+    .bulk-actions { display: none; padding: 10px; background: #0f3460; border-radius: 6px; margin-bottom: 10px; }
+    .bulk-actions.visible { display: flex; }
+    .count { color: #e94560; font-weight: bold; }
+    .hidden { display: none; }
+    .status { padding: 10px; background: #0f3460; border-radius: 6px; margin-bottom: 10px; }
   </style>
 </head>
 <body>
   <h1>Chub Manager</h1>
 
+  <!-- Auth Section -->
   <div class="section">
-    <div class="flex">
-      <div style="flex:1">
-        <label>API Key (CH-API-KEY)</label>
-        <input type="password" id="apiKey" placeholder="Enter your Chub API key">
+    <div class="grid grid-3">
+      <div>
+        <label>API Key (MARS_TOKEN from localStorage)</label>
+        <input type="password" id="apiKey" placeholder="CHK-..." style="width:100%">
       </div>
-      <div style="flex:1">
+      <div>
         <label>Username</label>
-        <input type="text" id="username" placeholder="Your Chub username">
+        <input type="text" id="username" placeholder="Your Chub username" style="width:100%">
       </div>
-      <button onclick="loadCharacters()" style="margin-top:18px">Load My Characters</button>
+      <div style="display:flex; align-items:flex-end; gap:10px;">
+        <button onclick="loadMyCharacters()">My Characters</button>
+        <button onclick="loadAllTags()" class="secondary">Load Tags</button>
+      </div>
     </div>
   </div>
 
+  <!-- Filter Section -->
   <div class="section">
-    <h2>Characters</h2>
-    <div id="characterList" class="character-list">
-      <p style="color:#666">Enter your API key and username to load characters</p>
+    <h2>Filter (client-side)</h2>
+    <div class="grid grid-2">
+      <div>
+        <label>Include Tags (comma-separated)</label>
+        <input type="text" id="includeTags" placeholder="e.g. Fantasy, OC" style="width:100%" oninput="applyFilters()">
+      </div>
+      <div>
+        <label>Exclude Tags (comma-separated)</label>
+        <input type="text" id="excludeTags" placeholder="e.g. NSFW, Furry" style="width:100%" oninput="applyFilters()">
+      </div>
+    </div>
+    <div class="grid grid-3" style="margin-top:10px">
+      <div>
+        <label>Text Search (name, tagline, description)</label>
+        <input type="text" id="searchText" placeholder="Search text..." style="width:100%" oninput="applyFilters()">
+      </div>
+      <div>
+        <label>Tag Match Mode</label>
+        <select id="tagMatchMode" style="width:100%" onchange="applyFilters()">
+          <option value="and">Match ALL tags (AND)</option>
+          <option value="or">Match ANY tag (OR)</option>
+        </select>
+      </div>
+      <div>
+        <label>Sort By</label>
+        <select id="sortBy" style="width:100%" onchange="applyFilters()">
+          <option value="name-asc">Name (A-Z)</option>
+          <option value="name-desc">Name (Z-A)</option>
+          <option value="created-desc">Newest First</option>
+          <option value="created-asc">Oldest First</option>
+          <option value="updated-desc">Recently Updated</option>
+          <option value="stars-desc">Most Popular</option>
+          <option value="tokens-desc">Most Tokens</option>
+          <option value="tokens-asc">Fewest Tokens</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-top:15px">
+      <button onclick="clearFilters()" class="secondary">Clear Filters</button>
+      <span id="filterStatus" style="margin-left:15px;color:#888"></span>
     </div>
   </div>
 
+  <!-- Bulk Actions -->
+  <div class="bulk-actions" id="bulkActions">
+    <span><span class="count" id="selectedCount">0</span> selected</span>
+    <button onclick="bulkAddTag()">+ Add Tag</button>
+    <button onclick="bulkRemoveTag()" class="secondary">- Remove Tag</button>
+    <button onclick="selectAll()" class="secondary">Select All</button>
+    <button onclick="selectNone()" class="secondary">Select None</button>
+  </div>
+
+  <!-- Status -->
+  <div class="status hidden" id="status"></div>
+
+  <!-- Character List -->
+  <div class="section">
+    <h2>Characters <span id="charCount" style="font-weight:normal;color:#888"></span></h2>
+    <div id="characterList" class="character-list">
+      <p style="color:#666">Load your characters or search to get started</p>
+    </div>
+  </div>
+
+  <!-- Editor Modal -->
   <div class="section" id="editor">
-    <h2>Edit Character: <span id="editorTitle"></span></h2>
-    <div class="field">
-      <label>Name</label>
-      <input type="text" id="charName">
+    <h2>Edit: <span id="editorTitle"></span></h2>
+    <div class="grid grid-2">
+      <div class="field">
+        <label>Character Name</label>
+        <input type="text" id="charName" style="width:100%">
+      </div>
+      <div class="field">
+        <label>Tagline</label>
+        <input type="text" id="charTagline" style="width:100%">
+      </div>
     </div>
     <div class="field">
-      <label>Tagline</label>
-      <input type="text" id="charTagline">
+      <label>Personality / Description</label>
+      <textarea id="charPersonality"></textarea>
     </div>
     <div class="field">
-      <label>Description</label>
-      <textarea id="charDescription"></textarea>
+      <label>First Message</label>
+      <textarea id="charFirstMessage"></textarea>
+    </div>
+    <div class="grid grid-2">
+      <div class="field">
+        <label>Scenario</label>
+        <textarea id="charScenario" style="min-height:100px"></textarea>
+      </div>
+      <div class="field">
+        <label>System Prompt</label>
+        <textarea id="charSystemPrompt" style="min-height:100px"></textarea>
+      </div>
     </div>
     <div class="flex">
       <button onclick="saveCharacter()">Save Changes</button>
-      <button onclick="closeEditor()" style="background:#666">Cancel</button>
+      <button onclick="closeEditor()" class="secondary">Cancel</button>
     </div>
   </div>
 
   <script>
     let currentCharacter = null;
+    let allCharacters = [];  // All loaded characters
+    let characters = [];     // Filtered characters (displayed)
+    let selectedIds = new Set();
+    let allTags = [];
+
+    // Load saved credentials on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      const savedKey = localStorage.getItem('chub_api_key');
+      const savedUser = localStorage.getItem('chub_username');
+      if (savedKey) document.getElementById('apiKey').value = savedKey;
+      if (savedUser) document.getElementById('username').value = savedUser;
+    });
 
     function getApiKey() {
-      return document.getElementById('apiKey').value;
+      const key = document.getElementById('apiKey').value;
+      localStorage.setItem('chub_api_key', key);
+      return key;
     }
 
-    async function loadCharacters() {
+    function getUsername() {
+      const user = document.getElementById('username').value;
+      localStorage.setItem('chub_username', user);
+      return user;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function showStatus(msg, isError = false) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.style.color = isError ? '#e94560' : '#4ecca3';
+      el.classList.remove('hidden');
+    }
+
+    function hideStatus() {
+      document.getElementById('status').classList.add('hidden');
+    }
+
+    function updateBulkActions() {
+      const bar = document.getElementById('bulkActions');
+      const count = selectedIds.size;
+      document.getElementById('selectedCount').textContent = count;
+      bar.classList.toggle('visible', count > 0 || characters.length > 0);
+    }
+
+    function toggleSelect(id) {
+      if (selectedIds.has(id)) {
+        selectedIds.delete(id);
+      } else {
+        selectedIds.add(id);
+      }
+      updateBulkActions();
+      renderCharacters();
+    }
+
+    function selectAll() {
+      characters.forEach(c => selectedIds.add(c.id));
+      updateBulkActions();
+      renderCharacters();
+    }
+
+    function selectNone() {
+      selectedIds.clear();
+      updateBulkActions();
+      renderCharacters();
+    }
+
+    function renderCharacters() {
+      const list = document.getElementById('characterList');
+      document.getElementById('charCount').textContent = `(${characters.length})`;
+
+      if (characters.length === 0) {
+        list.innerHTML = '<p style="color:#666">No characters found</p>';
+        return;
+      }
+
+      list.innerHTML = characters.map(c => {
+        const checked = selectedIds.has(c.id) ? 'checked' : '';
+        const tags = (c.topics || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
+        const safePath = escapeHtml(c.fullPath);
+        const safeName = escapeHtml(c.name);
+        const safeDesc = escapeHtml(c.tagline || c.description?.substring(0, 100) || 'No description');
+        return `
+          <div class="character-card">
+            <input type="checkbox" ${checked} onchange="toggleSelect(${c.id})">
+            <div class="info" onclick="editCharacter('${safePath}')">
+              <h3>${safeName}</h3>
+              <p>${safeDesc}</p>
+              ${tags ? `<div class="tags">${tags}</div>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      updateBulkActions();
+    }
+
+    async function loadMyCharacters() {
       const apiKey = getApiKey();
-      const username = document.getElementById('username').value;
+      const username = getUsername();
 
       if (!apiKey || !username) {
         alert('Please enter both API key and username');
         return;
       }
 
-      const list = document.getElementById('characterList');
-      list.innerHTML = '<p>Loading...</p>';
+      showStatus('Loading characters...');
 
       try {
         const res = await fetch(`/api/users/${username}`, {
@@ -95,30 +290,263 @@
         const data = await res.json();
 
         if (data.error) {
-          list.innerHTML = `<p style="color:#e94560">Error: ${data.error}</p>`;
+          showStatus('Error: ' + data.error, true);
           return;
         }
 
-        const characters = data.data?.nodes || data.nodes || [];
-        if (characters.length === 0) {
-          list.innerHTML = '<p>No characters found</p>';
-          return;
-        }
-
-        list.innerHTML = characters.map(c => `
-          <div class="character-card" onclick="editCharacter('${c.fullPath || c.full_path}')">
-            <h3>${c.name}</h3>
-            <p>${c.tagline || c.description?.substring(0, 100) || 'No description'}</p>
-          </div>
-        `).join('');
+        allCharacters = data.projects?.nodes || [];
+        selectedIds.clear();
+        applyFilters();
+        hideStatus();
       } catch (err) {
-        list.innerHTML = `<p style="color:#e94560">Error: ${err.message}</p>`;
+        showStatus('Error: ' + err.message, true);
       }
+    }
+
+    function applyFilters() {
+      const includeTagsRaw = document.getElementById('includeTags').value.trim().toLowerCase();
+      const excludeTagsRaw = document.getElementById('excludeTags').value.trim().toLowerCase();
+      const searchText = document.getElementById('searchText').value.trim().toLowerCase();
+      const matchMode = document.getElementById('tagMatchMode').value;
+
+      const includeTags = includeTagsRaw ? includeTagsRaw.split(',').map(t => t.trim()).filter(t => t) : [];
+      const excludeTags = excludeTagsRaw ? excludeTagsRaw.split(',').map(t => t.trim()).filter(t => t) : [];
+
+      characters = allCharacters.filter(c => {
+        const charTags = (c.topics || []).map(t => t.toLowerCase());
+        const charText = [c.name, c.tagline, c.description].filter(Boolean).join(' ').toLowerCase();
+
+        // Check exclude tags first
+        if (excludeTags.length > 0) {
+          const hasExcluded = excludeTags.some(t => charTags.includes(t));
+          if (hasExcluded) return false;
+        }
+
+        // Check include tags
+        if (includeTags.length > 0) {
+          if (matchMode === 'and') {
+            const hasAll = includeTags.every(t => charTags.includes(t));
+            if (!hasAll) return false;
+          } else {
+            const hasAny = includeTags.some(t => charTags.includes(t));
+            if (!hasAny) return false;
+          }
+        }
+
+        // Check text search
+        if (searchText && !charText.includes(searchText)) {
+          return false;
+        }
+
+        return true;
+      });
+
+      // Sort
+      const sortBy = document.getElementById('sortBy').value;
+      const [sortField, sortDir] = sortBy.split('-');
+      characters.sort((a, b) => {
+        let aVal, bVal;
+        switch (sortField) {
+          case 'name':
+            aVal = (a.name || '').toLowerCase();
+            bVal = (b.name || '').toLowerCase();
+            break;
+          case 'created':
+            aVal = a.createdAt || '';
+            bVal = b.createdAt || '';
+            break;
+          case 'updated':
+            aVal = a.lastActivityAt || '';
+            bVal = b.lastActivityAt || '';
+            break;
+          case 'stars':
+            aVal = a.starCount || 0;
+            bVal = b.starCount || 0;
+            break;
+          case 'tokens':
+            aVal = a.nTokens || 0;
+            bVal = b.nTokens || 0;
+            break;
+          default:
+            return 0;
+        }
+        if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+
+      // Update filter status
+      const statusEl = document.getElementById('filterStatus');
+      if (allCharacters.length > 0) {
+        statusEl.textContent = `Showing ${characters.length} of ${allCharacters.length}`;
+      } else {
+        statusEl.textContent = '';
+      }
+
+      renderCharacters();
+    }
+
+    function clearFilters() {
+      document.getElementById('includeTags').value = '';
+      document.getElementById('excludeTags').value = '';
+      document.getElementById('searchText').value = '';
+      document.getElementById('tagMatchMode').value = 'and';
+      document.getElementById('sortBy').value = 'name-asc';
+      applyFilters();
+    }
+
+    async function doSearch() {
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        alert('Please enter your API key');
+        return;
+      }
+
+      const params = new URLSearchParams();
+
+      const includeTags = document.getElementById('includeTags').value.trim();
+      const excludeTags = document.getElementById('excludeTags').value.trim();
+      const searchText = document.getElementById('searchText').value.trim();
+      const inclusiveOr = document.getElementById('tagMatchMode').value;
+
+      if (includeTags) params.set('tags', includeTags);
+      if (excludeTags) params.set('exclude_tags', excludeTags);
+      if (searchText) params.set('search', searchText);
+      params.set('inclusive_or', inclusiveOr);
+      params.set('first', '200');  // Get up to 200 results
+      params.set('namespace', 'characters');  // Search characters specifically
+      // params.set('only_mine', 'all');  // Disabled for debugging
+
+      showStatus('Searching...');
+
+      try {
+        const res = await fetch(`/api/search?${params}`, {
+          headers: { 'X-Chub-API-Key': apiKey }
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          showStatus('Error: ' + data.error, true);
+          return;
+        }
+
+        allCharacters = data.nodes || data.data?.nodes || [];
+        selectedIds.clear();
+        applyFilters();
+        hideStatus();
+      } catch (err) {
+        showStatus('Error: ' + err.message, true);
+      }
+    }
+
+
+    async function loadAllTags() {
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        alert('Please enter your API key');
+        return;
+      }
+
+      showStatus('Loading tags...');
+
+      try {
+        const res = await fetch('/api/tags', {
+          method: 'POST',
+          headers: {
+            'X-Chub-API-Key': apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          showStatus('Error: ' + data.error, true);
+          return;
+        }
+
+        allTags = data.tags || data;
+        console.log('Loaded tags:', allTags);
+        showStatus(`Loaded ${Array.isArray(allTags) ? allTags.length : Object.keys(allTags).length} tags (see console)`);
+      } catch (err) {
+        showStatus('Error: ' + err.message, true);
+      }
+    }
+
+    async function bulkAddTag() {
+      if (selectedIds.size === 0) {
+        alert('Select at least one character');
+        return;
+      }
+
+      const tag = prompt('Enter tag to add:');
+      if (!tag) return;
+
+      const apiKey = getApiKey();
+      showStatus(`Adding tag "${tag}" to ${selectedIds.size} characters...`);
+
+      let success = 0, failed = 0;
+      for (const id of selectedIds) {
+        try {
+          const res = await fetch(`/api/tags/${id}/${encodeURIComponent(tag)}`, {
+            method: 'POST',
+            headers: { 'X-Chub-API-Key': apiKey }
+          });
+          const data = await res.json();
+          if (data.error) {
+            failed++;
+          } else {
+            success++;
+          }
+        } catch (err) {
+          failed++;
+        }
+      }
+
+      showStatus(`Added tag: ${success} succeeded, ${failed} failed`);
+      if (success > 0) loadMyCharacters();
+    }
+
+    async function bulkRemoveTag() {
+      if (selectedIds.size === 0) {
+        alert('Select at least one character');
+        return;
+      }
+
+      const tag = prompt('Enter tag to remove:');
+      if (!tag) return;
+
+      const apiKey = getApiKey();
+      showStatus(`Removing tag "${tag}" from ${selectedIds.size} characters...`);
+
+      let success = 0, failed = 0;
+      for (const id of selectedIds) {
+        try {
+          const res = await fetch(`/api/tags/${id}/${encodeURIComponent(tag)}`, {
+            method: 'DELETE',
+            headers: { 'X-Chub-API-Key': apiKey }
+          });
+          const data = await res.json();
+          if (data.error) {
+            failed++;
+          } else {
+            success++;
+          }
+        } catch (err) {
+          failed++;
+        }
+      }
+
+      showStatus(`Removed tag: ${success} succeeded, ${failed} failed`);
+      if (success > 0) loadMyCharacters();
     }
 
     async function editCharacter(fullPath) {
       const apiKey = getApiKey();
-      const [creator, name] = fullPath.split('/');
+      const [creator, ...nameParts] = fullPath.split('/');
+      const name = nameParts.join('/');
+
+      showStatus('Loading character...');
 
       try {
         const res = await fetch(`/api/characters/${creator}/${name}`, {
@@ -127,19 +555,25 @@
         const data = await res.json();
 
         if (data.error) {
-          alert('Error loading character: ' + data.error);
+          showStatus('Error: ' + data.error, true);
           return;
         }
 
-        currentCharacter = { creator, name, data: data.data || data };
+        const node = data.node;
+        const def = node.definition || {};
+        currentCharacter = { creator, name, fullPath, node, definition: def };
 
-        document.getElementById('editorTitle').textContent = currentCharacter.data.name;
-        document.getElementById('charName').value = currentCharacter.data.name || '';
-        document.getElementById('charTagline').value = currentCharacter.data.tagline || '';
-        document.getElementById('charDescription').value = currentCharacter.data.description || '';
+        document.getElementById('editorTitle').textContent = def.name || node.name;
+        document.getElementById('charName').value = def.name || '';
+        document.getElementById('charTagline').value = node.tagline || '';
+        document.getElementById('charPersonality').value = def.personality || '';
+        document.getElementById('charFirstMessage').value = def.first_message || '';
+        document.getElementById('charScenario').value = def.scenario || '';
+        document.getElementById('charSystemPrompt').value = def.system_prompt || '';
         document.getElementById('editor').style.display = 'block';
+        hideStatus();
       } catch (err) {
-        alert('Error: ' + err.message);
+        showStatus('Error: ' + err.message, true);
       }
     }
 
@@ -150,8 +584,13 @@
       const updates = {
         name: document.getElementById('charName').value,
         tagline: document.getElementById('charTagline').value,
-        description: document.getElementById('charDescription').value
+        personality: document.getElementById('charPersonality').value,
+        first_message: document.getElementById('charFirstMessage').value,
+        scenario: document.getElementById('charScenario').value,
+        system_prompt: document.getElementById('charSystemPrompt').value
       };
+
+      showStatus('Saving...');
 
       try {
         const res = await fetch(`/api/characters/${currentCharacter.creator}/${currentCharacter.name}`, {
@@ -165,15 +604,15 @@
         const data = await res.json();
 
         if (data.error) {
-          alert('Error saving: ' + data.error);
+          showStatus('Error: ' + data.error, true);
           return;
         }
 
-        alert('Character saved!');
+        showStatus('Character saved!');
         closeEditor();
-        loadCharacters();
+        loadMyCharacters();
       } catch (err) {
-        alert('Error: ' + err.message);
+        showStatus('Error: ' + err.message, true);
       }
     }
 

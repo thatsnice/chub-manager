@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chub Manager</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: #1a1a2e; color: #eee; }
+    h1 { color: #e94560; }
+    input, textarea, button { font-size: 14px; padding: 8px 12px; border-radius: 4px; border: 1px solid #444; }
+    input, textarea { background: #16213e; color: #eee; width: 100%; }
+    button { background: #e94560; color: white; border: none; cursor: pointer; }
+    button:hover { background: #ff6b6b; }
+    .section { margin-bottom: 20px; padding: 15px; background: #16213e; border-radius: 8px; }
+    .character-list { display: grid; gap: 10px; }
+    .character-card { padding: 12px; background: #0f3460; border-radius: 6px; cursor: pointer; }
+    .character-card:hover { background: #1a4a7a; }
+    .character-card h3 { margin: 0 0 5px 0; color: #e94560; }
+    .character-card p { margin: 0; font-size: 13px; color: #aaa; }
+    #editor { display: none; }
+    #editor textarea { min-height: 200px; margin: 10px 0; }
+    .flex { display: flex; gap: 10px; align-items: center; }
+    label { display: block; margin-bottom: 5px; color: #aaa; font-size: 13px; }
+    .field { margin-bottom: 15px; }
+  </style>
+</head>
+<body>
+  <h1>Chub Manager</h1>
+
+  <div class="section">
+    <div class="flex">
+      <div style="flex:1">
+        <label>API Key (CH-API-KEY)</label>
+        <input type="password" id="apiKey" placeholder="Enter your Chub API key">
+      </div>
+      <div style="flex:1">
+        <label>Username</label>
+        <input type="text" id="username" placeholder="Your Chub username">
+      </div>
+      <button onclick="loadCharacters()" style="margin-top:18px">Load My Characters</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Characters</h2>
+    <div id="characterList" class="character-list">
+      <p style="color:#666">Enter your API key and username to load characters</p>
+    </div>
+  </div>
+
+  <div class="section" id="editor">
+    <h2>Edit Character: <span id="editorTitle"></span></h2>
+    <div class="field">
+      <label>Name</label>
+      <input type="text" id="charName">
+    </div>
+    <div class="field">
+      <label>Tagline</label>
+      <input type="text" id="charTagline">
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea id="charDescription"></textarea>
+    </div>
+    <div class="flex">
+      <button onclick="saveCharacter()">Save Changes</button>
+      <button onclick="closeEditor()" style="background:#666">Cancel</button>
+    </div>
+  </div>
+
+  <script>
+    let currentCharacter = null;
+
+    function getApiKey() {
+      return document.getElementById('apiKey').value;
+    }
+
+    async function loadCharacters() {
+      const apiKey = getApiKey();
+      const username = document.getElementById('username').value;
+
+      if (!apiKey || !username) {
+        alert('Please enter both API key and username');
+        return;
+      }
+
+      const list = document.getElementById('characterList');
+      list.innerHTML = '<p>Loading...</p>';
+
+      try {
+        const res = await fetch(`/api/users/${username}`, {
+          headers: { 'X-Chub-API-Key': apiKey }
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          list.innerHTML = `<p style="color:#e94560">Error: ${data.error}</p>`;
+          return;
+        }
+
+        const characters = data.data?.nodes || data.nodes || [];
+        if (characters.length === 0) {
+          list.innerHTML = '<p>No characters found</p>';
+          return;
+        }
+
+        list.innerHTML = characters.map(c => `
+          <div class="character-card" onclick="editCharacter('${c.fullPath || c.full_path}')">
+            <h3>${c.name}</h3>
+            <p>${c.tagline || c.description?.substring(0, 100) || 'No description'}</p>
+          </div>
+        `).join('');
+      } catch (err) {
+        list.innerHTML = `<p style="color:#e94560">Error: ${err.message}</p>`;
+      }
+    }
+
+    async function editCharacter(fullPath) {
+      const apiKey = getApiKey();
+      const [creator, name] = fullPath.split('/');
+
+      try {
+        const res = await fetch(`/api/characters/${creator}/${name}`, {
+          headers: { 'X-Chub-API-Key': apiKey }
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          alert('Error loading character: ' + data.error);
+          return;
+        }
+
+        currentCharacter = { creator, name, data: data.data || data };
+
+        document.getElementById('editorTitle').textContent = currentCharacter.data.name;
+        document.getElementById('charName').value = currentCharacter.data.name || '';
+        document.getElementById('charTagline').value = currentCharacter.data.tagline || '';
+        document.getElementById('charDescription').value = currentCharacter.data.description || '';
+        document.getElementById('editor').style.display = 'block';
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function saveCharacter() {
+      if (!currentCharacter) return;
+
+      const apiKey = getApiKey();
+      const updates = {
+        name: document.getElementById('charName').value,
+        tagline: document.getElementById('charTagline').value,
+        description: document.getElementById('charDescription').value
+      };
+
+      try {
+        const res = await fetch(`/api/characters/${currentCharacter.creator}/${currentCharacter.name}`, {
+          method: 'PUT',
+          headers: {
+            'X-Chub-API-Key': apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(updates)
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          alert('Error saving: ' + data.error);
+          return;
+        }
+
+        alert('Character saved!');
+        closeEditor();
+        loadCharacters();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    function closeEditor() {
+      document.getElementById('editor').style.display = 'none';
+      currentCharacter = null;
+    }
+  </script>
+</body>
+</html>
